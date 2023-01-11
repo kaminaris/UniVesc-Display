@@ -20,6 +20,7 @@ class Gauge {
 	const char* bottomLabel;
 	const uint8_t* smallFont;
 	const uint8_t* bigFont;
+	const uint8_t* sectionsFont;
 	TFT_eSprite sprite;
 	TFT_eSPI* tft;
 
@@ -34,8 +35,7 @@ class Gauge {
 	void drawTopLabel();
 	void drawBottomLabel();
 	void drawValue();
-	void setSmallFont(const uint8_t* font);
-	void setBigFont(const uint8_t* font);
+	void setFonts(const uint8_t* small, const uint8_t* big, const uint8_t* sections);
 	void draw();
 };
 
