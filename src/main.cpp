@@ -5,23 +5,35 @@
 #include <TFT_eSPI.h>  // Graphics library
 
 #include "AzeretMono.h"
+#include "Buzzer.h"
 #include "Icons.h"
 #include "NotoSansBold15.h"
 #include "NotoSansBold36.h"
 #include "VescUart.h"
-#include "Buzzer.h"
 #include "WireBus.h"
 #include "widget/Clock.h"
 #include "widget/Gauge.h"
 #include "widget/ProgressBar.h"
 
 // APP SETTINGS START
-#define WHEEL_DIAMETER 51.8
+#define WHEEL_DIAMETER 500
+#define MOTOR_POLE_PAIRS 7
 #define MAX_BATTERY_VOLTAGE 84
 #define MAX_MOTOR_CURRENT 35
+#define VOLTAGE_X 5
+#define POWER_X 205
+
+#define TEMP_MCU_X 10
+#define TEMP_MCU_Y 220
+
+#define TEMP_MOSFET_X 120
+#define TEMP_MOSFET_Y 220
+
+#define CLOCK_X 50
+#define CLOCK_Y 180
 
 // APP SETTINGS FINISH
-#define TFT_LED 21 // Backlight
+#define TFT_LED 21	// Backlight
 #define BUZZER_PIN 13
 #define MAX_IMAGE_WIDTH 32
 #define TEXTSPR_WIDTH 70
@@ -45,9 +57,10 @@ Buzzer buzzer = Buzzer(BUZZER_PIN);
 ProgressBar power = ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
 ProgressBar battery = ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
 Gauge speedGauge = Gauge(&tft, 140, 1, TFT_WHITE);
-Clock clkWidget = Clock(&tft, 100, 30);
+Clock clkWidget = Clock(&tft, 120, 30);
 auto voltageText = TFT_eSprite(&tft);
 auto powerText = TFT_eSprite(&tft);
+auto odometerText = TFT_eSprite(&tft);
 
 void clearScreen() {
 	tft.fillScreen(TFT_BLACK);
@@ -84,13 +97,13 @@ void drawPng(int32_t ix, int32_t iy, uint8_t* img, int dataSize) {
 }
 
 void createBattery() {
-	battery.setPosition(20, 40);
+	battery.setPosition(VOLTAGE_X, 40);
 	battery.mode = ProgressBar::Mode::VerticalReversed;
 
-	drawPng(21, 5, battery32, sizeof(battery32));
+	drawPng(VOLTAGE_X + 1, 5, battery32, sizeof(battery32));
 
 	voltageText.setColorDepth(16);
-	voltageText.createSprite(TEXTSPR_WIDTH, 30);
+	voltageText.createSprite(TEXTSPR_WIDTH, 20);
 	voltageText.setTextDatum(TL_DATUM);
 	voltageText.loadFont(AzeretMono16);
 	voltageText.setTextColor(TFT_GREEN);
@@ -113,13 +126,13 @@ void drawBattery() {
 }
 
 void createPower() {
-	power.setPosition(270, 40);
+	power.setPosition(POWER_X, 40);
 	power.mode = ProgressBar::Mode::VerticalReversed;
 
-	drawPng(269, 5, engine32, sizeof(engine32));
+	drawPng(POWER_X, 5, engine32, sizeof(engine32));
 
 	powerText.setColorDepth(16);
-	powerText.createSprite(TEXTSPR_WIDTH, 30);
+	powerText.createSprite(TEXTSPR_WIDTH, 20);
 
 	powerText.setTextDatum(TL_DATUM);
 	powerText.loadFont(AzeretMono16);
@@ -136,27 +149,22 @@ void drawPower() {
 	String vol = String(rv / 1000, 1);
 	powerText.fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
 	powerText.drawString(vol + "kW", 0, 0);
-	powerText.pushSprite(260, 160);
+	powerText.pushSprite(POWER_X - 25, 160);
 }
 
-#define TEMP1X 60
-#define TEMP2X 160
-#define TEMP1Y 200
-#define TEMP2Y 200
-
 void createClock() {
-	clkWidget.setPosition(110, 170);
-	clkWidget.setBigFont(AzeretMono16);
+	clkWidget.setPosition(CLOCK_X, CLOCK_Y);
+	clkWidget.setBigFont(AzeretMono22);
 	clkWidget.setSmallFont(AzeretMono14);
 	// clkWidget.draw();
 }
 
 void createTemps() {
-	drawPng(TEMP1X, TEMP1Y, temperature32, sizeof(temperature32));
-	drawPng(TEMP1X + 32, TEMP1Y, cpu32, sizeof(cpu32));
+	drawPng(TEMP_MCU_X, TEMP_MCU_Y, temperature32, sizeof(temperature32));
+	drawPng(TEMP_MCU_X + 32, TEMP_MCU_Y, cpu32, sizeof(cpu32));
 
-	drawPng(TEMP2X, TEMP2Y, temperature32, sizeof(temperature32));
-	drawPng(TEMP2X + 32, TEMP2Y, car_engine32, sizeof(car_engine32));
+	drawPng(TEMP_MOSFET_X, TEMP_MOSFET_Y, temperature32, sizeof(temperature32));
+	drawPng(TEMP_MOSFET_X + 32, TEMP_MOSFET_Y, car_engine32, sizeof(car_engine32));
 }
 
 void drawTemps() {
@@ -165,15 +173,15 @@ void drawTemps() {
 
 	tft.setTextDatum(TL_DATUM);
 	tft.loadFont(AzeretMono22);
-	tft.drawString(String(motorTemp, 0), TEMP1X + 2 * 35, TEMP1Y + 5);	//
-	tft.drawString(String(mosfetTemp, 0), TEMP2X + 2 * 35, TEMP2Y + 5);
+	tft.drawString(String(motorTemp, 0), TEMP_MCU_X + 2 * 35, TEMP_MCU_Y + 5);	//
+	tft.drawString(String(mosfetTemp, 0), TEMP_MOSFET_X + 2 * 35, TEMP_MOSFET_Y + 5);
 }
 
 void createSpeedGauge() {
 	speedGauge.setFonts(AzeretMono16, AzeretMono26, AzeretMono14);
-	speedGauge.setPosition(90, 20);
+	speedGauge.setPosition(50, 20);
 	speedGauge.setSections(0, 80, 8, 6, 1.5);
-	speedGauge.setTopLabel("Speed");
+	// speedGauge.setTopLabel("Speed");
 	speedGauge.setBottomLabel("km/h");
 	speedGauge.setValue(50);
 	speedGauge.draw();
@@ -189,6 +197,27 @@ void drawSpeedGauge() {
 	speedGauge.draw();
 }
 
+void createOdometer() {
+	odometerText.setColorDepth(16);
+	odometerText.createSprite(260, 40);
+
+	odometerText.setTextDatum(ML_DATUM);
+	odometerText.loadFont(AzeretMono16);
+	odometerText.setTextColor(TFT_WHITE);
+}
+
+void drawOdometer() {
+	float tachAbs = vescUart.data.tachometerAbs / (MOTOR_POLE_PAIRS * 3);
+	float tach = vescUart.data.tachometer / (MOTOR_POLE_PAIRS * 3);
+	// Motor RPM x Pi x (1 / meters in a mile or km) x Wheel diameter x (motor pulley / wheelpulley);
+	float total = mode == Demo ? random(10000) / 10 : tachAbs * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
+	float session = mode == Demo ? random(10000) / 10 : tach * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
+
+	odometerText.fillRect(0, 0, 260, 40, TFT_BLACK);
+	odometerText.drawString("T: " + String(total, 1) + "km  S: " + String(session, 1) + "km", 0, 20);
+	odometerText.pushSprite(20, 260);
+}
+
 void switchToMode(AppMode m, bool force = false) {
 	if (mode == m && !force) {
 		return;
@@ -201,6 +230,7 @@ void switchToMode(AppMode m, bool force = false) {
 	createSpeedGauge();
 	createTemps();
 	createClock();
+	createOdometer();
 }
 
 void setup() {
@@ -230,12 +260,6 @@ void loop() {
 	uint32_t m = millis();
 
 	if (m - lastRefresh >= 150) {
-		drawBattery();
-		drawPower();
-		drawSpeedGauge();
-		drawTemps();
-		clkWidget.draw();
-
 		WireBus::getTime();
 
 		if (vescUart.getVescValues()) {
@@ -253,6 +277,15 @@ void loop() {
 			// Serial.println("Failed to get data!");
 			switchToMode(Demo);
 		}
+
+		drawBattery();
+		drawPower();
+		drawSpeedGauge();
+		drawTemps();
+		drawOdometer();
+		clkWidget.draw();
+
+		
 		lastRefresh = m;
 	}
 
