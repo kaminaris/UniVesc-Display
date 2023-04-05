@@ -45,7 +45,7 @@ enum AppMode { Demo, Live };
 
 // Local variables
 AppMode mode = Demo;
-PNG png;
+PNG* png = nullptr;
 int32_t imgX;
 int32_t imgY;
 
@@ -62,7 +62,7 @@ Clock* clkWidget = nullptr;
 TFT_eSprite* voltageText = nullptr;
 TFT_eSprite* powerText = nullptr;
 TFT_eSprite* odometerText = nullptr;
-BluetoothSerial SerialBT;
+BluetoothSerial BT;
 
 void clearScreen() {
 	tft.fillScreen(TFT_BLACK);
@@ -73,29 +73,29 @@ void clearScreen() {
 
 void pngDrawLine(PNGDRAW* pDraw) {
 	uint16_t lineBuffer[MAX_IMAGE_WIDTH];
-	png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+	png->getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
 	tft.pushImage(imgX, imgY + pDraw->y, pDraw->iWidth, 1, lineBuffer);
 }
 
 void drawPng(int32_t ix, int32_t iy, uint8_t* img, int dataSize) {
-	imgX = ix;
-	imgY = iy;
+	// imgX = ix;
+	// imgY = iy;
 
-	int16_t rc = png.openFLASH(img, dataSize, pngDrawLine);
-	if (rc == PNG_SUCCESS) {
-		tft.startWrite();
-		uint32_t dt = millis();
-		rc = png.decode(NULL, 0);
-		Serial.print(millis() - dt);
-		Serial.println("ms");
-		tft.endWrite();
-		png.close();  // not needed for memory->memory decode
-	}
-	else {
-		Serial.println("Failed to open image");
-		Serial.println(rc);
-		Serial.println(sizeof(img));
-	}
+	// int16_t rc = png->openFLASH(img, dataSize, pngDrawLine);
+	// if (rc == PNG_SUCCESS) {
+	// 	tft.startWrite();
+	// 	uint32_t dt = millis();
+	// 	rc = png->decode(NULL, 0);
+	// 	Serial.print(millis() - dt);
+	// 	Serial.println("ms");
+	// 	tft.endWrite();
+	// 	png->close();  // not needed for memory->memory decode
+	// }
+	// else {
+	// 	Serial.println("Failed to open image");
+	// 	Serial.println(rc);
+	// 	Serial.println(sizeof(img));
+	// }
 }
 
 void createBattery() {
@@ -232,13 +232,6 @@ void switchToMode(AppMode m, bool force = false) {
 	}
 
 	clearScreen();
-
-	createBattery();
-	createPower();
-	createSpeedGauge();
-	createTemps();
-	createClock();
-	createOdometer();
 }
 
 void UpdateTFT(void* pvParameters) {
@@ -257,10 +250,10 @@ void UpdateTFT(void* pvParameters) {
 void ReadBTUart(void* pvParams) {
 	while (true) {
 		if (Serial.available()) {
-			SerialBT.write(Serial.read());
+			BT.write(Serial.read());
 		}
-		if (SerialBT.available()) {
-			Serial.write(SerialBT.read());
+		if (BT.available()) {
+			Serial.write(BT.read());
 		}
 
 		vTaskDelay(pdMS_TO_TICKS(20));
@@ -296,6 +289,14 @@ void ReadTime(void* p) {
 	}
 }
 
+void BTPing(void* p) {
+	while (true) {
+		BT.println("Ping");
+		Serial.println("ping");
+		vTaskDelay(pdMS_TO_TICKS(2000));
+	}
+}
+
 void setup() {
 	// Debug only
 	Serial.begin(115200);
@@ -310,22 +311,29 @@ void setup() {
 
 	tft.begin();
 	tft.setRotation(0);
-	switchToMode(Demo, true);
-	//SerialBT.begin("ESP32test");
+	BT.begin("UniVesc Ctrl");
 
-	// BT = new BLE();
-	// BT->begin("ESP32 OTA Updates");
 	delay(500);
+
+	createBattery();
+	createPower();
+	createSpeedGauge();
+	createTemps();
+	createClock();
+	createOdometer();
+
+	switchToMode(Demo, true);
 
 	xTaskCreatePinnedToCore(UpdateTFT, "UpdateTFT", 4096, NULL, 3, NULL, ARDUINO_RUNNING_CORE);
 	xTaskCreatePinnedToCore(ReadVesc, "ReadVesc", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
 	xTaskCreatePinnedToCore(ReadTime, "ReadTime", 4096, NULL, 10, NULL, ARDUINO_RUNNING_CORE);
-	// xTaskCreatePinnedToCore(ReadBTUart, "ReadBTUart", 4096, NULL, 5, NULL, ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(ReadBTUart, "ReadBTUart", 4096, NULL, 5, NULL, ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(BTPing, "BTPing", 4096, NULL, 10, NULL, ARDUINO_RUNNING_CORE);
 }
 
-uint32_t lastRefresh = 0;
-uint32_t lastBeep = 0;
-bool beeping = false;
+// uint32_t lastRefresh = 0;
+// uint32_t lastBeep = 0;
+// bool beeping = false;
 
 void loop() {
 	// uint32_t m = millis();
