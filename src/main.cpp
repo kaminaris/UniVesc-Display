@@ -45,14 +45,14 @@ enum AppMode { Demo, Live };
 
 // Local variables
 AppMode mode = Demo;
-PNG* png = nullptr;
 int32_t imgX;
 int32_t imgY;
 
 // Main classes
-VescUart vescUart;
+PNG* png = nullptr;
+VescUart* vescUart = nullptr;
 TFT_eSPI tft = TFT_eSPI();
-Buzzer buzzer = Buzzer(BUZZER_PIN);
+Buzzer* buzzer = nullptr;
 
 // Display widgets
 ProgressBar* power = nullptr;
@@ -81,13 +81,13 @@ void drawPng(int32_t ix, int32_t iy, uint8_t* img, int dataSize) {
 	// imgX = ix;
 	// imgY = iy;
 
-	// int16_t rc = png->openFLASH(img, dataSize, pngDrawLine);
+	// int16_t rc = png->openRAM(img, dataSize, pngDrawLine);
 	// if (rc == PNG_SUCCESS) {
 	// 	tft.startWrite();
-	// 	uint32_t dt = millis();
+	// 	// uint32_t dt = millis();
 	// 	rc = png->decode(NULL, 0);
-	// 	Serial.print(millis() - dt);
-	// 	Serial.println("ms");
+	// 	// Serial.print(millis() - dt);
+	// 	// Serial.println("ms");
 	// 	tft.endWrite();
 	// 	png->close();  // not needed for memory->memory decode
 	// }
@@ -98,12 +98,19 @@ void drawPng(int32_t ix, int32_t iy, uint8_t* img, int dataSize) {
 	// }
 }
 
+void drawImage(int32_t ix, int32_t iy, uint32_t width, uint32_t height, uint16_t* img) {
+	tft.startWrite();
+	tft.pushImage(ix, iy, width, height, img);
+	tft.endWrite();
+}
+
 void createBattery() {
 	battery = new ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
 	battery->setPosition(VOLTAGE_X, 40);
 	battery->mode = ProgressBar::Mode::VerticalReversed;
 
-	drawPng(VOLTAGE_X + 1, 5, battery32, sizeof(battery32));
+	drawImage(VOLTAGE_X + 1, 5, 32, 32, battery32raw);
+	// drawPng(VOLTAGE_X + 1, 5, battery32, sizeof(battery32));
 	voltageText = new TFT_eSprite(&tft);
 	voltageText->setColorDepth(16);
 	voltageText->createSprite(TEXTSPR_WIDTH, 20);
@@ -113,8 +120,8 @@ void createBattery() {
 }
 
 void drawBattery() {
-	float pct = mode == Demo ? random(100) : vescUart.data.wattHours / vescUart.data.wattHoursCharged;
-	float currentVoltage = mode == Demo ? random(MAX_BATTERY_VOLTAGE * 10) / 10 : vescUart.data.inpVoltage;
+	float pct = mode == Demo ? random(100) : vescUart->data.wattHours / vescUart->data.wattHoursCharged;
+	float currentVoltage = mode == Demo ? random(MAX_BATTERY_VOLTAGE * 10) / 10 : vescUart->data.inpVoltage;
 
 	uint8_t red = 255 - 255 * (pct / 100);
 	uint8_t green = 255 * (pct / 100);
@@ -145,8 +152,8 @@ void createPower() {
 }
 
 void drawPower() {
-	float percent = mode == Demo ? random(100) : vescUart.data.avgMotorCurrent / MAX_MOTOR_CURRENT;
-	float rv = mode == Demo ? random(2200) : vescUart.data.avgMotorCurrent * vescUart.data.inpVoltage;
+	float percent = mode == Demo ? random(100) : vescUart->data.avgMotorCurrent / MAX_MOTOR_CURRENT;
+	float rv = mode == Demo ? random(2200) : vescUart->data.avgMotorCurrent * vescUart->data.inpVoltage;
 
 	power->setProgress(percent);
 	power->draw();
@@ -174,8 +181,8 @@ void createTemps() {
 }
 
 void drawTemps() {
-	float motorTemp = mode == Demo ? 26.7 : vescUart.data.tempMotor;
-	float mosfetTemp = mode == Demo ? 29.3 : vescUart.data.tempMosfet;
+	float motorTemp = mode == Demo ? 26.7 : vescUart->data.tempMotor;
+	float mosfetTemp = mode == Demo ? 29.3 : vescUart->data.tempMosfet;
 
 	tft.setTextDatum(TL_DATUM);
 	tft.loadFont(AzeretMono22);
@@ -215,8 +222,8 @@ void createOdometer() {
 }
 
 void drawOdometer() {
-	float tachAbs = vescUart.data.tachometerAbs / (MOTOR_POLE_PAIRS * 3);
-	float tach = vescUart.data.tachometer / (MOTOR_POLE_PAIRS * 3);
+	float tachAbs = vescUart->data.tachometerAbs / (MOTOR_POLE_PAIRS * 3);
+	float tach = vescUart->data.tachometer / (MOTOR_POLE_PAIRS * 3);
 	// Motor RPM x Pi x (1 / meters in a mile or km) x Wheel diameter x (motor pulley / wheelpulley);
 	float total = mode == Demo ? random(10000) / 10 : tachAbs * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
 	float session = mode == Demo ? random(10000) / 10 : tach * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
@@ -262,15 +269,15 @@ void ReadBTUart(void* pvParams) {
 
 void ReadVesc(void* params) {
 	while (true) {
-		if (vescUart.getVescValues()) {
-			Serial.println(vescUart.data.rpm);
-			Serial.println(vescUart.data.inpVoltage);
-			Serial.println(vescUart.data.ampHours);
-			Serial.println(vescUart.data.tachometerAbs);
-			Serial.println(vescUart.data.tempMosfet);
-			Serial.println(vescUart.data.tempMotor);
-			Serial.println(vescUart.appData.pitch);
-			Serial.println(vescUart.appData.roll);
+		if (vescUart->getVescValues()) {
+			Serial.println(vescUart->data.rpm);
+			Serial.println(vescUart->data.inpVoltage);
+			Serial.println(vescUart->data.ampHours);
+			Serial.println(vescUart->data.tachometerAbs);
+			Serial.println(vescUart->data.tempMosfet);
+			Serial.println(vescUart->data.tempMotor);
+			Serial.println(vescUart->appData.pitch);
+			Serial.println(vescUart->appData.roll);
 			switchToMode(Live);
 		}
 		else {
@@ -302,8 +309,10 @@ void setup() {
 	Serial.begin(115200);
 	// Communication with vesc
 	Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
-	vescUart.setSerialPort(&Serial2);
+	vescUart = new VescUart();
+	vescUart->setSerialPort(&Serial2);
 
+	buzzer = new Buzzer(BUZZER_PIN);
 	// Turn on backlight
 	pinMode(TFT_LED, OUTPUT);
 	digitalWrite(TFT_LED, HIGH);
@@ -315,6 +324,8 @@ void setup() {
 
 	delay(500);
 
+	switchToMode(Demo, true);
+
 	createBattery();
 	createPower();
 	createSpeedGauge();
@@ -322,7 +333,6 @@ void setup() {
 	createClock();
 	createOdometer();
 
-	switchToMode(Demo, true);
 
 	xTaskCreatePinnedToCore(UpdateTFT, "UpdateTFT", 4096, NULL, 3, NULL, ARDUINO_RUNNING_CORE);
 	xTaskCreatePinnedToCore(ReadVesc, "ReadVesc", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
@@ -330,10 +340,6 @@ void setup() {
 	xTaskCreatePinnedToCore(ReadBTUart, "ReadBTUart", 4096, NULL, 5, NULL, ARDUINO_RUNNING_CORE);
 	xTaskCreatePinnedToCore(BTPing, "BTPing", 4096, NULL, 10, NULL, ARDUINO_RUNNING_CORE);
 }
-
-// uint32_t lastRefresh = 0;
-// uint32_t lastBeep = 0;
-// bool beeping = false;
 
 void loop() {
 	// uint32_t m = millis();
