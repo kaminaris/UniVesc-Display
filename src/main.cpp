@@ -2,7 +2,8 @@
 #include <HardwareSerial.h>
 #include <PNGdec.h>
 #include <SPI.h>
-#include <TFT_eSPI.h>  // Graphics library
+#include <TFT_eSPI.h>
+#include "BluetoothSerial.h"
 
 #include "AzeretMono.h"
 #include "Buzzer.h"
@@ -54,13 +55,14 @@ TFT_eSPI tft = TFT_eSPI();
 Buzzer buzzer = Buzzer(BUZZER_PIN);
 
 // Display widgets
-ProgressBar power = ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
-ProgressBar battery = ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
-Gauge speedGauge = Gauge(&tft, 140, 1, TFT_WHITE);
-Clock clkWidget = Clock(&tft, 120, 30);
+ProgressBar* power = nullptr;
+ProgressBar* battery = nullptr;
+Gauge* speedGauge = nullptr;
+Clock* clkWidget = nullptr;
 auto voltageText = TFT_eSprite(&tft);
 auto powerText = TFT_eSprite(&tft);
 auto odometerText = TFT_eSprite(&tft);
+BluetoothSerial SerialBT;
 
 void clearScreen() {
 	tft.fillScreen(TFT_BLACK);
@@ -97,8 +99,9 @@ void drawPng(int32_t ix, int32_t iy, uint8_t* img, int dataSize) {
 }
 
 void createBattery() {
-	battery.setPosition(VOLTAGE_X, 40);
-	battery.mode = ProgressBar::Mode::VerticalReversed;
+	battery = new ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
+	battery->setPosition(VOLTAGE_X, 40);
+	battery->mode = ProgressBar::Mode::VerticalReversed;
 
 	drawPng(VOLTAGE_X + 1, 5, battery32, sizeof(battery32));
 
@@ -116,9 +119,9 @@ void drawBattery() {
 	uint8_t red = 255 - 255 * (pct / 100);
 	uint8_t green = 255 * (pct / 100);
 	uint16_t newColor = (((31 * (red + 4)) / 255) << 11) | (((63 * (green + 2)) / 255) << 5) | ((31 * (0 + 4)) / 255);
-	battery.fillColor = newColor;
-	battery.setProgress(pct);
-	battery.draw();
+	battery->fillColor = newColor;
+	battery->setProgress(pct);
+	battery->draw();
 
 	voltageText.fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
 	voltageText.drawString(String(currentVoltage, 1) + "V", 0, 0);
@@ -126,8 +129,9 @@ void drawBattery() {
 }
 
 void createPower() {
-	power.setPosition(POWER_X, 40);
-	power.mode = ProgressBar::Mode::VerticalReversed;
+	power = new ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
+	power->setPosition(POWER_X, 40);
+	power->mode = ProgressBar::Mode::VerticalReversed;
 
 	drawPng(POWER_X, 5, engine32, sizeof(engine32));
 
@@ -143,8 +147,8 @@ void drawPower() {
 	float percent = mode == Demo ? random(100) : vescUart.data.avgMotorCurrent / MAX_MOTOR_CURRENT;
 	float rv = mode == Demo ? random(2200) : vescUart.data.avgMotorCurrent * vescUart.data.inpVoltage;
 
-	power.setProgress(percent);
-	power.draw();
+	power->setProgress(percent);
+	power->draw();
 
 	String vol = String(rv / 1000, 1);
 	powerText.fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
@@ -153,9 +157,10 @@ void drawPower() {
 }
 
 void createClock() {
-	clkWidget.setPosition(CLOCK_X, CLOCK_Y);
-	clkWidget.setBigFont(AzeretMono22);
-	clkWidget.setSmallFont(AzeretMono14);
+	clkWidget = new Clock(&tft, 120, 30);
+	clkWidget->setPosition(CLOCK_X, CLOCK_Y);
+	clkWidget->setBigFont(AzeretMono22);
+	clkWidget->setSmallFont(AzeretMono14);
 	// clkWidget.draw();
 }
 
@@ -178,13 +183,14 @@ void drawTemps() {
 }
 
 void createSpeedGauge() {
-	speedGauge.setFonts(AzeretMono16, AzeretMono26, AzeretMono14);
-	speedGauge.setPosition(50, 20);
-	speedGauge.setSections(0, 80, 8, 6, 1.5);
+	speedGauge = new Gauge(&tft, 140, 1, TFT_WHITE);
+	speedGauge->setFonts(AzeretMono16, AzeretMono26, AzeretMono14);
+	speedGauge->setPosition(50, 20);
+	speedGauge->setSections(0, 80, 8, 6, 1.5);
 	// speedGauge.setTopLabel("Speed");
-	speedGauge.setBottomLabel("km/h");
-	speedGauge.setValue(50);
-	speedGauge.draw();
+	speedGauge->setBottomLabel("km/h");
+	speedGauge->setValue(50);
+	speedGauge->draw();
 }
 
 int spp = 0;
@@ -193,8 +199,8 @@ void drawSpeedGauge() {
 	if (spp > 80) {
 		spp = 0;
 	}
-	speedGauge.setValue(spp);
-	speedGauge.draw();
+	speedGauge->setValue(spp);
+	speedGauge->draw();
 }
 
 void createOdometer() {
@@ -233,35 +239,34 @@ void switchToMode(AppMode m, bool force = false) {
 	createOdometer();
 }
 
-void setup() {
-	// Debug only
-	Serial.begin(115200);
-	// Communication with vesc
-	Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
-	vescUart.setSerialPort(&Serial2);
+void UpdateTFT(void* pvParameters) {
+	while (true) {
+		drawBattery();
+		drawPower();
+		drawSpeedGauge();
+		drawTemps();
+		drawOdometer();
+		clkWidget->draw();
 
-	// Turn on backlight
-	pinMode(TFT_LED, OUTPUT);
-	digitalWrite(TFT_LED, HIGH);
-	WireBus::init();
-
-	tft.begin();
-	tft.setRotation(0);
-	switchToMode(Demo, true);
-
-	delay(1000);
+		vTaskDelay(pdMS_TO_TICKS(250));
+	}
 }
 
-uint32_t lastRefresh = 0;
-uint32_t lastBeep = 0;
-bool beeping = false;
+void ReadBTUart(void* pvParams) {
+	while (true) {
+		if (Serial.available()) {
+			SerialBT.write(Serial.read());
+		}
+		if (SerialBT.available()) {
+			Serial.write(SerialBT.read());
+		}
 
-void loop() {
-	uint32_t m = millis();
+		vTaskDelay(pdMS_TO_TICKS(20));
+	}
+}
 
-	if (m - lastRefresh >= 150) {
-		WireBus::getTime();
-
+void ReadVesc(void* params) {
+	while (true) {
 		if (vescUart.getVescValues()) {
 			Serial.println(vescUart.data.rpm);
 			Serial.println(vescUart.data.inpVoltage);
@@ -278,16 +283,63 @@ void loop() {
 			switchToMode(Demo);
 		}
 
-		drawBattery();
-		drawPower();
-		drawSpeedGauge();
-		drawTemps();
-		drawOdometer();
-		clkWidget.draw();
-
-		
-		lastRefresh = m;
+		vTaskDelay(pdMS_TO_TICKS(200));
 	}
+}
+
+void ReadTime(void* p) {
+	while (true) {
+		WireBus::getTime();
+		vTaskDelay(pdMS_TO_TICKS(400));
+	}
+}
+
+void setup() {
+	// Debug only
+	Serial.begin(115200);
+	// Communication with vesc
+	Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
+	vescUart.setSerialPort(&Serial2);
+
+	// Turn on backlight
+	pinMode(TFT_LED, OUTPUT);
+	digitalWrite(TFT_LED, HIGH);
+	WireBus::init();
+
+	tft.begin();
+	tft.setRotation(0);
+	switchToMode(Demo, true);
+	//SerialBT.begin("ESP32test");
+
+	// BT = new BLE();
+	// BT->begin("ESP32 OTA Updates");
+	delay(500);
+
+	xTaskCreatePinnedToCore(UpdateTFT, "UpdateTFT", 4096, NULL, 3, NULL, ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(ReadVesc, "ReadVesc", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(ReadTime, "ReadTime", 4096, NULL, 10, NULL, ARDUINO_RUNNING_CORE);
+	// xTaskCreatePinnedToCore(ReadBTUart, "ReadBTUart", 4096, NULL, 5, NULL, ARDUINO_RUNNING_CORE);
+}
+
+uint32_t lastRefresh = 0;
+uint32_t lastBeep = 0;
+bool beeping = false;
+
+void loop() {
+	// uint32_t m = millis();
+
+	// if (m - lastRefresh >= 250) {
+	// 	Serial.println("UPD");
+	// 	WireBus::getTime();
+
+	// 	// if (Serial.available()) {
+	// 	// 	SerialBT.write(Serial.read());
+	// 	// }
+	// 	if (SerialBT.available()) {
+	// 		Serial.write(SerialBT.read());
+	// 	}
+	// 	lastRefresh = m;
+	// }
 
 	// if (m - lastBeep >= 1000) {
 	// 	beeping = !beeping;
