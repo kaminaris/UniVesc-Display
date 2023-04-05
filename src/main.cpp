@@ -3,9 +3,9 @@
 #include <PNGdec.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
-#include "BluetoothSerial.h"
 
 #include "AzeretMono.h"
+#include "BluetoothSerial.h"
 #include "Buzzer.h"
 #include "Icons.h"
 #include "NotoSansBold15.h"
@@ -59,9 +59,9 @@ ProgressBar* power = nullptr;
 ProgressBar* battery = nullptr;
 Gauge* speedGauge = nullptr;
 Clock* clkWidget = nullptr;
-auto voltageText = TFT_eSprite(&tft);
-auto powerText = TFT_eSprite(&tft);
-auto odometerText = TFT_eSprite(&tft);
+TFT_eSprite* voltageText = nullptr;
+TFT_eSprite* powerText = nullptr;
+TFT_eSprite* odometerText = nullptr;
 BluetoothSerial SerialBT;
 
 void clearScreen() {
@@ -104,12 +104,12 @@ void createBattery() {
 	battery->mode = ProgressBar::Mode::VerticalReversed;
 
 	drawPng(VOLTAGE_X + 1, 5, battery32, sizeof(battery32));
-
-	voltageText.setColorDepth(16);
-	voltageText.createSprite(TEXTSPR_WIDTH, 20);
-	voltageText.setTextDatum(TL_DATUM);
-	voltageText.loadFont(AzeretMono16);
-	voltageText.setTextColor(TFT_GREEN);
+	voltageText = new TFT_eSprite(&tft);
+	voltageText->setColorDepth(16);
+	voltageText->createSprite(TEXTSPR_WIDTH, 20);
+	voltageText->setTextDatum(TL_DATUM);
+	voltageText->loadFont(AzeretMono16);
+	voltageText->setTextColor(TFT_GREEN);
 }
 
 void drawBattery() {
@@ -123,9 +123,9 @@ void drawBattery() {
 	battery->setProgress(pct);
 	battery->draw();
 
-	voltageText.fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
-	voltageText.drawString(String(currentVoltage, 1) + "V", 0, 0);
-	voltageText.pushSprite(10, 160);
+	voltageText->fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
+	voltageText->drawString(String(currentVoltage, 1) + "V", 0, 0);
+	voltageText->pushSprite(10, 160);
 }
 
 void createPower() {
@@ -135,12 +135,13 @@ void createPower() {
 
 	drawPng(POWER_X, 5, engine32, sizeof(engine32));
 
-	powerText.setColorDepth(16);
-	powerText.createSprite(TEXTSPR_WIDTH, 20);
+	powerText = new TFT_eSprite(&tft);
+	powerText->setColorDepth(16);
+	powerText->createSprite(TEXTSPR_WIDTH, 20);
 
-	powerText.setTextDatum(TL_DATUM);
-	powerText.loadFont(AzeretMono16);
-	powerText.setTextColor(TFT_GREEN);
+	powerText->setTextDatum(TL_DATUM);
+	powerText->loadFont(AzeretMono16);
+	powerText->setTextColor(TFT_GREEN);
 }
 
 void drawPower() {
@@ -151,9 +152,9 @@ void drawPower() {
 	power->draw();
 
 	String vol = String(rv / 1000, 1);
-	powerText.fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
-	powerText.drawString(vol + "kW", 0, 0);
-	powerText.pushSprite(POWER_X - 25, 160);
+	powerText->fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
+	powerText->drawString(vol + "kW", 0, 0);
+	powerText->pushSprite(POWER_X - 25, 160);
 }
 
 void createClock() {
@@ -204,12 +205,13 @@ void drawSpeedGauge() {
 }
 
 void createOdometer() {
-	odometerText.setColorDepth(16);
-	odometerText.createSprite(260, 40);
+	odometerText = new TFT_eSprite(&tft);
+	odometerText->setColorDepth(16);
+	odometerText->createSprite(260, 40);
 
-	odometerText.setTextDatum(ML_DATUM);
-	odometerText.loadFont(AzeretMono16);
-	odometerText.setTextColor(TFT_WHITE);
+	odometerText->setTextDatum(ML_DATUM);
+	odometerText->loadFont(AzeretMono16);
+	odometerText->setTextColor(TFT_WHITE);
 }
 
 void drawOdometer() {
@@ -219,9 +221,9 @@ void drawOdometer() {
 	float total = mode == Demo ? random(10000) / 10 : tachAbs * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
 	float session = mode == Demo ? random(10000) / 10 : tach * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
 
-	odometerText.fillRect(0, 0, 260, 40, TFT_BLACK);
-	odometerText.drawString("T: " + String(total, 1) + "km  S: " + String(session, 1) + "km", 0, 20);
-	odometerText.pushSprite(20, 260);
+	odometerText->fillRect(0, 0, 260, 40, TFT_BLACK);
+	odometerText->drawString("T: " + String(total, 1) + "km  S: " + String(session, 1) + "km", 0, 20);
+	odometerText->pushSprite(20, 260);
 }
 
 void switchToMode(AppMode m, bool force = false) {
