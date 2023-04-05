@@ -71,33 +71,6 @@ void clearScreen() {
 	tft.setTextDatum(MC_DATUM);
 }
 
-void pngDrawLine(PNGDRAW* pDraw) {
-	uint16_t lineBuffer[MAX_IMAGE_WIDTH];
-	png->getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
-	tft.pushImage(imgX, imgY + pDraw->y, pDraw->iWidth, 1, lineBuffer);
-}
-
-void drawPng(int32_t ix, int32_t iy, uint8_t* img, int dataSize) {
-	// imgX = ix;
-	// imgY = iy;
-
-	// int16_t rc = png->openRAM(img, dataSize, pngDrawLine);
-	// if (rc == PNG_SUCCESS) {
-	// 	tft.startWrite();
-	// 	// uint32_t dt = millis();
-	// 	rc = png->decode(NULL, 0);
-	// 	// Serial.print(millis() - dt);
-	// 	// Serial.println("ms");
-	// 	tft.endWrite();
-	// 	png->close();  // not needed for memory->memory decode
-	// }
-	// else {
-	// 	Serial.println("Failed to open image");
-	// 	Serial.println(rc);
-	// 	Serial.println(sizeof(img));
-	// }
-}
-
 void drawImage(int32_t ix, int32_t iy, uint32_t width, uint32_t height, uint16_t* img) {
 	tft.startWrite();
 	tft.pushImage(ix, iy, width, height, img);
@@ -109,8 +82,7 @@ void createBattery() {
 	battery->setPosition(VOLTAGE_X, 40);
 	battery->mode = ProgressBar::Mode::VerticalReversed;
 
-	drawImage(VOLTAGE_X + 1, 5, 32, 32, battery32raw);
-	// drawPng(VOLTAGE_X + 1, 5, battery32, sizeof(battery32));
+	drawImage(VOLTAGE_X + 1, 5, 32, 32, battery32);
 	voltageText = new TFT_eSprite(&tft);
 	voltageText->setColorDepth(16);
 	voltageText->createSprite(TEXTSPR_WIDTH, 20);
@@ -140,7 +112,7 @@ void createPower() {
 	power->setPosition(POWER_X, 40);
 	power->mode = ProgressBar::Mode::VerticalReversed;
 
-	drawPng(POWER_X, 5, engine32, sizeof(engine32));
+	drawImage(POWER_X, 5, 32, 32, engine32);
 
 	powerText = new TFT_eSprite(&tft);
 	powerText->setColorDepth(16);
@@ -173,11 +145,11 @@ void createClock() {
 }
 
 void createTemps() {
-	drawPng(TEMP_MCU_X, TEMP_MCU_Y, temperature32, sizeof(temperature32));
-	drawPng(TEMP_MCU_X + 32, TEMP_MCU_Y, cpu32, sizeof(cpu32));
+	drawImage(TEMP_MCU_X, TEMP_MCU_Y, 32, 32, temperature32);
+	drawImage(TEMP_MCU_X + 32, TEMP_MCU_Y, 32, 32, cpu32);
 
-	drawPng(TEMP_MOSFET_X, TEMP_MOSFET_Y, temperature32, sizeof(temperature32));
-	drawPng(TEMP_MOSFET_X + 32, TEMP_MOSFET_Y, car_engine32, sizeof(car_engine32));
+	drawImage(TEMP_MOSFET_X, TEMP_MOSFET_Y, 32, 32, temperature32);
+	drawImage(TEMP_MOSFET_X + 32, TEMP_MOSFET_Y, 32, 32, car_engine32);
 }
 
 void drawTemps() {
