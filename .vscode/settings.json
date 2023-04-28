@@ -12,5 +12,6 @@
 		"vector": "cpp",
 		"regex": "cpp",
 		"new": "cpp"
-	}
+	},
+	"cmake.configureOnOpen": false
 }

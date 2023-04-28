@@ -1,15 +1,15 @@
 #include <Arduino.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <HardwareSerial.h>
-#include <PNGdec.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
+#include <WiFi.h>
 
 #include "AzeretMono.h"
 #include "BluetoothSerial.h"
 #include "Buzzer.h"
 #include "Icons.h"
-#include "NotoSansBold15.h"
-#include "NotoSansBold36.h"
 #include "VescUart.h"
 #include "WireBus.h"
 #include "widget/Clock.h"
@@ -17,10 +17,15 @@
 #include "widget/ProgressBar.h"
 
 // APP SETTINGS START
-#define WHEEL_DIAMETER 500
-#define MOTOR_POLE_PAIRS 7
-#define MAX_BATTERY_VOLTAGE 84
-#define MAX_MOTOR_CURRENT 35
+#define WHEEL_DIAMETER 0.5 // in meters
+#define MOTOR_PULLEY 1.0
+#define WHEEL_PULLEY 1.0
+#define MOTOR_POLE_PAIRS 7.0
+#define MAX_BATTERY_VOLTAGE 84.0
+#define MIN_BATTERY_VOLTAGE 50.0
+#define MAX_MOTOR_CURRENT 35.0
+
+// Display positions
 #define VOLTAGE_X 5
 #define POWER_X 205
 
@@ -48,8 +53,20 @@ AppMode mode = Demo;
 int32_t imgX;
 int32_t imgY;
 
+float tachometer = 0;
+float rpm = 0;
+float distance = 0;
+double velocity = 0;
+float batPercentage = 0;
+float motorTemp = 0;
+float mosfetTemp = 0;
+float powerWatt = 0;
+float powerPercent = 0;
+float voltage = 0;
+
+AsyncWebServer server(80);
+
 // Main classes
-PNG* png = nullptr;
 VescUart* vescUart = nullptr;
 TFT_eSPI tft = TFT_eSPI();
 Buzzer* buzzer = nullptr;
@@ -62,7 +79,10 @@ Clock* clkWidget = nullptr;
 TFT_eSprite* voltageText = nullptr;
 TFT_eSprite* powerText = nullptr;
 TFT_eSprite* odometerText = nullptr;
+TFT_eSprite* mosfetTempText = nullptr;
+TFT_eSprite* motorTempText = nullptr;
 BluetoothSerial BT;
+bool clearRequested = false;
 
 void clearScreen() {
 	tft.fillScreen(TFT_BLACK);
@@ -77,12 +97,18 @@ void drawImage(int32_t ix, int32_t iy, uint32_t width, uint32_t height, uint16_t
 	tft.endWrite();
 }
 
+void drawAllImages() {
+	drawImage(VOLTAGE_X + 1, 5, 32, 32, battery32);
+	drawImage(POWER_X, 5, 32, 32, engine32);
+	drawImage(TEMP_MCU_X + 32, TEMP_MCU_Y, 32, 32, cpu32);
+	drawImage(TEMP_MOSFET_X + 32, TEMP_MOSFET_Y, 32, 32, car_engine32);
+}
+
 void createBattery() {
 	battery = new ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
 	battery->setPosition(VOLTAGE_X, 40);
 	battery->mode = ProgressBar::Mode::VerticalReversed;
 
-	drawImage(VOLTAGE_X + 1, 5, 32, 32, battery32);
 	voltageText = new TFT_eSprite(&tft);
 	voltageText->setColorDepth(16);
 	voltageText->createSprite(TEXTSPR_WIDTH, 20);
@@ -92,18 +118,15 @@ void createBattery() {
 }
 
 void drawBattery() {
-	float pct = mode == Demo ? random(100) : vescUart->data.wattHours / vescUart->data.wattHoursCharged;
-	float currentVoltage = mode == Demo ? random(MAX_BATTERY_VOLTAGE * 10) / 10 : vescUart->data.inpVoltage;
-
-	uint8_t red = 255 - 255 * (pct / 100);
-	uint8_t green = 255 * (pct / 100);
+	uint8_t red = 255 - 255 * (batPercentage / 100);
+	uint8_t green = 255 * (batPercentage / 100);
 	uint16_t newColor = (((31 * (red + 4)) / 255) << 11) | (((63 * (green + 2)) / 255) << 5) | ((31 * (0 + 4)) / 255);
 	battery->fillColor = newColor;
-	battery->setProgress(pct);
+	battery->setProgress(batPercentage);
 	battery->draw();
 
 	voltageText->fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
-	voltageText->drawString(String(currentVoltage, 1) + "V", 0, 0);
+	voltageText->drawString(String(voltage, 1) + "V", 0, 0);
 	voltageText->pushSprite(10, 160);
 }
 
@@ -111,8 +134,6 @@ void createPower() {
 	power = new ProgressBar(&tft, 2, 30, 100, TFT_WHITE, TFT_BROWN);
 	power->setPosition(POWER_X, 40);
 	power->mode = ProgressBar::Mode::VerticalReversed;
-
-	drawImage(POWER_X, 5, 32, 32, engine32);
 
 	powerText = new TFT_eSprite(&tft);
 	powerText->setColorDepth(16);
@@ -124,13 +145,10 @@ void createPower() {
 }
 
 void drawPower() {
-	float percent = mode == Demo ? random(100) : vescUart->data.avgMotorCurrent / MAX_MOTOR_CURRENT;
-	float rv = mode == Demo ? random(2200) : vescUart->data.avgMotorCurrent * vescUart->data.inpVoltage;
-
-	power->setProgress(percent);
+	power->setProgress(powerPercent);
 	power->draw();
 
-	String vol = String(rv / 1000, 1);
+	String vol = String(abs(powerWatt) / 1000, 1);
 	powerText->fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
 	powerText->drawString(vol + "kW", 0, 0);
 	powerText->pushSprite(POWER_X - 25, 160);
@@ -145,21 +163,34 @@ void createClock() {
 }
 
 void createTemps() {
-	drawImage(TEMP_MCU_X, TEMP_MCU_Y, 32, 32, temperature32);
-	drawImage(TEMP_MCU_X + 32, TEMP_MCU_Y, 32, 32, cpu32);
+	mosfetTempText = new TFT_eSprite(&tft);
+	mosfetTempText->setColorDepth(16);
+	mosfetTempText->createSprite(TEXTSPR_WIDTH, 20);
 
-	drawImage(TEMP_MOSFET_X, TEMP_MOSFET_Y, 32, 32, temperature32);
-	drawImage(TEMP_MOSFET_X + 32, TEMP_MOSFET_Y, 32, 32, car_engine32);
+	mosfetTempText->setTextDatum(TL_DATUM);
+	mosfetTempText->loadFont(AzeretMono22);
+	mosfetTempText->setTextColor(TFT_WHITE);
+
+	motorTempText = new TFT_eSprite(&tft);
+	motorTempText->setColorDepth(16);
+	motorTempText->createSprite(TEXTSPR_WIDTH, 20);
+
+	motorTempText->setTextDatum(TL_DATUM);
+	motorTempText->loadFont(AzeretMono22);
+	motorTempText->setTextColor(TFT_WHITE);
 }
 
 void drawTemps() {
-	float motorTemp = mode == Demo ? 26.7 : vescUart->data.tempMotor;
-	float mosfetTemp = mode == Demo ? 29.3 : vescUart->data.tempMosfet;
+	mosfetTempText->fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
+	mosfetTempText->drawString(String(mosfetTemp, 0), 0, 0);
+	mosfetTempText->pushSprite(TEMP_MOSFET_X + 2 * 35, TEMP_MOSFET_Y + 5);
 
-	tft.setTextDatum(TL_DATUM);
-	tft.loadFont(AzeretMono22);
-	tft.drawString(String(motorTemp, 0), TEMP_MCU_X + 2 * 35, TEMP_MCU_Y + 5);	//
-	tft.drawString(String(mosfetTemp, 0), TEMP_MOSFET_X + 2 * 35, TEMP_MOSFET_Y + 5);
+	motorTempText->fillRect(0, 0, TEXTSPR_WIDTH, 30, TFT_BLACK);
+	motorTempText->drawString(String(motorTemp, 0), 0, 0);
+	motorTempText->pushSprite(TEMP_MCU_X + 2 * 35, TEMP_MCU_Y + 5);
+
+	// tft.drawString(String(motorTemp, 0), TEMP_MCU_X + 2 * 35, TEMP_MCU_Y + 5);	//
+	// tft.drawString(String(mosfetTemp, 0), TEMP_MOSFET_X + 2 * 35, TEMP_MOSFET_Y + 5);
 }
 
 void createSpeedGauge() {
@@ -173,13 +204,8 @@ void createSpeedGauge() {
 	speedGauge->draw();
 }
 
-int spp = 0;
 void drawSpeedGauge() {
-	spp++;
-	if (spp > 80) {
-		spp = 0;
-	}
-	speedGauge->setValue(spp);
+	speedGauge->setValue(abs(velocity));
 	speedGauge->draw();
 }
 
@@ -194,11 +220,9 @@ void createOdometer() {
 }
 
 void drawOdometer() {
-	float tachAbs = vescUart->data.tachometerAbs / (MOTOR_POLE_PAIRS * 3);
-	float tach = vescUart->data.tachometer / (MOTOR_POLE_PAIRS * 3);
-	// Motor RPM x Pi x (1 / meters in a mile or km) x Wheel diameter x (motor pulley / wheelpulley);
-	float total = mode == Demo ? random(10000) / 10 : tachAbs * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
-	float session = mode == Demo ? random(10000) / 10 : tach * PI * (1 / 1000) * WHEEL_DIAMETER / 1000;
+	// TODO: fix that
+	float total = mode == Demo ? random(10000) / 10 : distance;
+	float session = mode == Demo ? random(10000) / 10 : distance;
 
 	odometerText->fillRect(0, 0, 260, 40, TFT_BLACK);
 	odometerText->drawString("T: " + String(total, 1) + "km  S: " + String(session, 1) + "km", 0, 20);
@@ -209,12 +233,20 @@ void switchToMode(AppMode m, bool force = false) {
 	if (mode == m && !force) {
 		return;
 	}
+	mode = m;
 
-	clearScreen();
+	clearRequested = true;
+	// clearScreen();
 }
 
 void UpdateTFT(void* pvParameters) {
 	while (true) {
+		if (clearRequested) {
+			clearScreen();
+			clearRequested = false;
+			drawAllImages();
+		}
+
 		drawBattery();
 		drawPower();
 		drawSpeedGauge();
@@ -226,34 +258,57 @@ void UpdateTFT(void* pvParameters) {
 	}
 }
 
-void ReadBTUart(void* pvParams) {
-	while (true) {
-		if (Serial.available()) {
-			BT.write(Serial.read());
-		}
-		if (BT.available()) {
-			Serial.write(BT.read());
-		}
-
-		vTaskDelay(pdMS_TO_TICKS(20));
-	}
-}
-
 void ReadVesc(void* params) {
 	while (true) {
 		if (vescUart->getVescValues()) {
-			Serial.println(vescUart->data.rpm);
-			Serial.println(vescUart->data.inpVoltage);
-			Serial.println(vescUart->data.ampHours);
-			Serial.println(vescUart->data.tachometerAbs);
-			Serial.println(vescUart->data.tempMosfet);
-			Serial.println(vescUart->data.tempMotor);
-			Serial.println(vescUart->appData.pitch);
-			Serial.println(vescUart->appData.roll);
+			// Serial.println(vescUart->data.rpm);
+			// Serial.println(vescUart->data.inpVoltage);
+			// Serial.println(vescUart->data.ampHours);
+			// Serial.println(vescUart->data.tachometerAbs);
+			// Serial.println(vescUart->data.tempMosfet);
+			// Serial.println(vescUart->data.tempMotor);
+			// Serial.println(vescUart->appData.pitch);
+			// Serial.println(vescUart->appData.roll);
+
+			motorTemp = vescUart->data.tempMotor;
+			random(100);
+			mosfetTemp = vescUart->data.tempMosfet;
+
+			voltage = vescUart->data.inpVoltage;
+			powerPercent = abs(vescUart->data.avgMotorCurrent / MAX_MOTOR_CURRENT);
+			powerWatt = vescUart->data.avgMotorCurrent * voltage;
+
+			// Code borrowed from
+			// https://github.com/TomStanton/VESC_LCD_EBIKE/blob/master/VESC6_LCD_EBIKE.ino
+
+			// The '42' is the number of motor poles multiplied by 3
+			tachometer = (vescUart->data.tachometerAbs) / MOTOR_POLE_PAIRS * 3;
+			rpm = (vescUart->data.rpm) / MOTOR_POLE_PAIRS;
+			// Motor tacho x Pi x (1 / meters in a mile or km) x Wheel diameter x (motor pulley / wheelpulley)
+			distance = tachometer * 3.1415 * (1.0 / 1000.0) * WHEEL_DIAMETER  * (MOTOR_PULLEY / WHEEL_PULLEY);
+			// Motor RPM x Pi x (seconds in a minute / meters in a kilometer) x Wheel diameter x (motor pulley /
+			// wheelpulley)
+			velocity = rpm * 3.1415 * WHEEL_DIAMETER * (60.0 / 1000.0) * (MOTOR_PULLEY / WHEEL_PULLEY);
+			// ((Battery voltage - minimum voltage) / number of cells) x 100
+			batPercentage =
+				100 * (vescUart->data.inpVoltage - MIN_BATTERY_VOLTAGE) / (MAX_BATTERY_VOLTAGE - MIN_BATTERY_VOLTAGE);
+
+			Serial.println(rpm);
+			Serial.println(rpm * 3.1415 * WHEEL_DIAMETER);
+			Serial.println((60.0 / 1000.0) * (MOTOR_PULLEY / WHEEL_PULLEY));
+			Serial.println(velocity);
 			switchToMode(Live);
 		}
 		else {
 			// Serial.println("Failed to get data!");
+			velocity = random(80);
+			voltage = random(MAX_BATTERY_VOLTAGE * 10) / 10;
+			batPercentage = random(100);
+			powerWatt = random(2200);
+			powerPercent = random(100);
+			motorTemp = random(500) / 10;
+			mosfetTemp = random(500) / 10;
+
 			switchToMode(Demo);
 		}
 
@@ -268,14 +323,50 @@ void ReadTime(void* p) {
 	}
 }
 
-void BTPing(void* p) {
-	while (true) {
-		BT.println("Ping");
-		Serial.println("ping");
-		vTaskDelay(pdMS_TO_TICKS(2000));
+void handleUpload(
+	AsyncWebServerRequest* request,
+	String filename,
+	size_t index,
+	uint8_t* data,
+	size_t len,
+	bool final
+) {
+	if (!index) {
+		Serial.printf("UploadStart: %s\n", filename.c_str());
+	}
+
+	for (size_t i = 0; i < len; i++) {
+		Serial.write(data[i]);
+	}
+
+	if (final) {
+		Serial.printf("UploadEnd: %s, %u B\n", filename.c_str(), index + len);
 	}
 }
 
+void handleUpdateTime(
+	AsyncWebServerRequest* request,
+	String filename,
+	size_t index,
+	uint8_t* data,
+	size_t len,
+	bool final
+) {
+	if (!index) {
+		Serial.printf("UploadStart: %s\n", filename.c_str());
+	}
+
+	for (size_t i = 0; i < len; i++) {
+		Serial.write(data[i]);
+	}
+
+	if (final) {
+		Serial.printf("UploadEnd: %s, %u B\n", filename.c_str(), index + len);
+	}
+}
+
+const char* ssid = "ESP32-Access-Point";
+const char* password = "12345678";
 void setup() {
 	// Debug only
 	Serial.begin(115200);
@@ -292,7 +383,74 @@ void setup() {
 
 	tft.begin();
 	tft.setRotation(0);
-	BT.begin("UniVesc Ctrl");
+
+	WiFi.mode(WIFI_AP);
+	WiFi.softAP(ssid, password);
+
+	IPAddress IP = WiFi.softAPIP();
+	Serial.print("AP IP address: ");
+	Serial.println(IP);
+
+	server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) { request->send(200, "text/html", "<h1>Hello</h1>"); });
+
+	server.on("/update", HTTP_GET, [](AsyncWebServerRequest* request) {
+		request->send(
+			200,
+			"text/html",
+			"<form method='post' enctype='multipart/form-data' action='/upfile'><input type='file' name='f'><button "
+			"type='submit'>Up</button></form>"
+		);
+	});
+
+	server.on("/time", HTTP_GET, [](AsyncWebServerRequest* request) {
+		request->send(
+			200,
+			"text/html",
+			"<form method='post' action='/update-time'><input id='x' type='text' name='d'>"
+			"<input id='dow' type='text' name='dow'>"
+			"<button type='submit'>Up</button></form><script>"
+			"const d = new Date();"
+			"const dfu = date => new Date(date.getTime() + date.getTimezoneOffset() * -60 * "
+			"1000).toISOString().slice(0, 19);"
+			"document.getElementById('x').value =dfu(d);"
+			"document.getElementById('dow').value = (d.getDay() + 6) % 7 + 1;"
+			"</script>"
+		);
+	});
+
+	server.on(
+		"/upfile", HTTP_POST, [](AsyncWebServerRequest* request) { request->send(200); }, handleUpload
+	);
+
+	server.on("/update-time", HTTP_POST, [](AsyncWebServerRequest* request) {
+		if (request->hasParam("d")) {
+			auto d = request->getParam("d");
+			auto val = d->value();
+
+			auto dow = request->getParam("dow");
+			auto dowVal = dow->value();
+
+			Serial.println(val);
+			Serial.println(dowVal);
+
+			auto year = val.substring(0, 3);
+			auto month = val.substring(5, 7);
+			auto day = val.substring(8, 10);
+			auto hour = val.substring(11, 13);
+			auto minute = val.substring(14, 16);
+			auto second = val.substring(17, 19);
+
+			Serial.println(year);
+			Serial.println(month);
+			Serial.println(day);
+			Serial.println(hour);
+			Serial.println(minute);
+			Serial.println(second);
+		}
+		request->send(200);
+	});
+
+	server.begin();
 
 	delay(500);
 
@@ -305,12 +463,11 @@ void setup() {
 	createClock();
 	createOdometer();
 
+	xTaskCreatePinnedToCore(UpdateTFT, "UpdateTFT", 4096, NULL, 1, NULL, 0);
+	xTaskCreatePinnedToCore(ReadVesc, "ReadVesc", 4096, NULL, 5, NULL, ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(ReadTime, "ReadTime", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
 
-	xTaskCreatePinnedToCore(UpdateTFT, "UpdateTFT", 4096, NULL, 3, NULL, ARDUINO_RUNNING_CORE);
-	xTaskCreatePinnedToCore(ReadVesc, "ReadVesc", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
-	xTaskCreatePinnedToCore(ReadTime, "ReadTime", 4096, NULL, 10, NULL, ARDUINO_RUNNING_CORE);
-	xTaskCreatePinnedToCore(ReadBTUart, "ReadBTUart", 4096, NULL, 5, NULL, ARDUINO_RUNNING_CORE);
-	xTaskCreatePinnedToCore(BTPing, "BTPing", 4096, NULL, 10, NULL, ARDUINO_RUNNING_CORE);
+	Serial.print("Starting up app");
 }
 
 void loop() {
@@ -338,4 +495,13 @@ void loop() {
 	// 	}
 	// 	lastBeep = m;
 	// }
+
+	// if (Serial.available()) {
+	// 	BT.write(Serial.read());
+	// }
+	// if (BT.available()) {
+	// 	Serial.write(BT.read());
+	// }
+
+	// vTaskDelay(pdMS_TO_TICKS(20));
 }

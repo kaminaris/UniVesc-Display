@@ -27,6 +27,7 @@ void Gauge::setSections(float min, float max, uint8_t sectionsCount, uint8_t sec
 	this->sectionsCount = sectionsCount;
 	this->sectionsLength = sectionsLength;
 	this->sectionsWidth = sectionsWidth;
+	sprite.loadFont(sectionsFont);
 	this->drawSections();
 }
 
@@ -35,7 +36,7 @@ void Gauge::drawSections() {
 	float radiusText = size / 2 - 1 - sectionsLength - 12;
 	float radiusMax = size / 2 - 1;
 
-	sprite.loadFont(sectionsFont);
+	//sprite.loadFont(sectionsFont);
 	sprite.setTextDatum(MC_DATUM);
 	for (int i = 0; i <= sectionsCount; i++) {
 		float angle = 60 + 240 - (240 / sectionsCount) * i;
@@ -97,7 +98,7 @@ void Gauge::drawTopLabel() {
 		return;
 	}
 
-	sprite.loadFont(smallFont);
+	// sprite.loadFont(smallFont);
 
 	sprite.setTextDatum(MC_DATUM);
 	sprite.drawString(topLabel, size / 2, size / 2 - 10, 1);
@@ -108,14 +109,14 @@ void Gauge::drawBottomLabel() {
 		return;
 	}
 
-	sprite.loadFont(smallFont);
+	// sprite.loadFont(smallFont);
 
 	sprite.setTextDatum(MC_DATUM);
 	sprite.drawString(bottomLabel, size / 2, size / 2 + 40, 1);
 }
 
 void Gauge::drawValue() {
-	sprite.loadFont(bigFont);
+	// sprite.loadFont(bigFont);
 	sprite.drawString(String(value, 0u), size / 2, size / 2 + 17, 1);
 }
 

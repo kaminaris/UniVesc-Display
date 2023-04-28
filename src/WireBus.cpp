@@ -4,6 +4,10 @@ uint8_t BcdToUint8(uint8_t val) {
 	return val - 6 * (val >> 4);
 }
 
+uint8_t Uint8ToBcd(uint8_t val) {
+	return val + 6 * (val / 10);
+}
+
 uint8_t BcdToBin24Hour(uint8_t bcdHour) {
 	uint8_t hour;
 	if (bcdHour & 0x40) {
@@ -25,14 +29,14 @@ char WireBus::dateString[20] = {0};
 char WireBus::timeString[20] = {0};
 
 void WireBus::init() {
-	Wire1.begin(I2C_SDA, I2C_SCL);  // 17, 16
+	Wire1.begin(I2C_SDA, I2C_SCL);	// 17, 16
 }
 
 void WireBus::eepromWrite(unsigned int uiAddress, int bData) {
 	int iCount = 0;
 	do {
 		Wire1.beginTransmission(AT24C32_I2C_ADDRESS);
-		Wire1.write((uint8_t)(uiAddress >> 8));  // MSB
+		Wire1.write((uint8_t)(uiAddress >> 8));	 // MSB
 		Wire1.write((uint8_t)uiAddress);		 // LSB
 		Wire1.write(bData);
 	} while (Wire1.endTransmission() != 0 && ++iCount < 10);
@@ -88,4 +92,34 @@ void WireBus::getTime() {
 		month,
 		dayOfMonth
 	);
+}
+
+void WireBus::setTime(
+	uint8_t second,
+	uint8_t minute,
+	uint8_t hour,
+	uint8_t dayOfWeek,
+	uint8_t day,
+	uint8_t month,
+	uint16_t year
+) {
+	// uint8_t sreg = getReg(DS1307_REG_STATUS) & _BV(DS1307_CH);
+
+	// set the date time
+	Wire1.beginTransmission(DS1307_I2C_ADDRESS);
+	Wire1.write(DS1307_REG_TIMEDATE);
+
+	Wire1.write(Uint8ToBcd(second));  // | sreg
+	Wire1.write(Uint8ToBcd(minute));
+	Wire1.write(Uint8ToBcd(hour));	// 24 hour mode only
+
+	Wire1.write(Uint8ToBcd(dayOfWeek));
+	Wire1.write(Uint8ToBcd(day));
+	Wire1.write(Uint8ToBcd(month));
+	Wire1.write(Uint8ToBcd(year - 2000));
+
+	uint8_t _lastError = Wire1.endTransmission();
+	if (_lastError != 0) {
+		// Serial.println("fail");
+	}
 }

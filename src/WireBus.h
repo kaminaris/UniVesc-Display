@@ -27,6 +27,8 @@ class WireBus {
 	static void eepromWrite(unsigned int uiAddress, int bData);
 	static int eepromRead(unsigned int uiAddress);
 	static void getTime();
+	static void
+	setTime(uint8_t second, uint8_t minute, uint8_t hour, uint8_t dayOfWeek, uint8_t day, uint8_t month, uint16_t year);
 };
 
 #endif

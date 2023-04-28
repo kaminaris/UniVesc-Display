@@ -15,6 +15,7 @@ void Clock::setSmallFont(const uint8_t* font) {
 
 void Clock::setBigFont(const uint8_t* font) {
 	bigFont = font;
+	sprite.loadFont(bigFont);
 }
 
 void Clock::setPosition(int32_t x, int32_t y) {
@@ -26,8 +27,8 @@ void Clock::draw() {
 	sprite.setTextDatum(MC_DATUM);
 	sprite.fillRect(0, 0, width, height, TFT_BLACK);
 
-	sprite.loadFont(bigFont);
-	sprite.drawString(WireBus::timeString, width/2,  26 / 2, 1);
+	// sprite.loadFont(bigFont);
+	sprite.drawString(WireBus::timeString, width/2,  26 / 2);
 
 	// sprite.loadFont(smallFont);
 	// sprite.drawString(datestring, width / 2, sprite.fontHeight() / 2 + 40, 1);
